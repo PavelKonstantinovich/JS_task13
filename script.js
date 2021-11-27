@@ -1,126 +1,181 @@
 let data = []
-let isEdit = false
-let currentEditedToDo = {}
 const formCreateElement = document.querySelector('#formCreate')
 const listElement = document.querySelector('#list')
 
-function handleSubmit(event) {
-  event.preventDefault()
-
-  const toDo = {
-    id: new Date().getTime(),
-    isChecked: false
+class ToDoSaved {
+  constructor() {
+    this.#init()
   }
 
-  const formData = new FormData(formCreateElement)
-  for (let [name, value] of formData.entries()) {
-    toDo[name] = value
+  #init() {
+    this.handleBeforeUnload = this.#handleBeforeUnload.bind(this)
+    this.handleDOMReady = this.#handleDOMReady.bind(this)
+
+    window.addEventListener('beforeunload', this.handleBeforeUnload)
+    window.addEventListener('DOMContentLoaded', this.handleDOMReady)
   }
 
-  data.push(toDo)
-  formCreateElement.reset()
+  #handleBeforeUnload() {
+    const json = JSON.stringify(data)
+    localStorage.setItem('data', json)
+  }
 
-  render()
-  isEdit = false
-}
+  #handleDOMReady(event) {
+    event.preventDefault()
+    const dataFromStorage = localStorage.getItem('data')
 
-function handleChange(event) {
-  const { target } = event
-  const { id, checked, type } = target
+    if (dataFromStorage) {
+      data = JSON.parse(dataFromStorage)
 
-  if (type !== 'checkbox') return
-
-  console.log(target.dataset)
-
-  data.forEach((item) => {
-    if (item.id == id) {
-      item.isChecked = checked
+      const eventRenderNeed = new Event('render:need')
+      window.dispatchEvent(eventRenderNeed)
     }
-  })
-
-  render()
-  isEdit = false
-}
-
-function handleBeforeUnload() {
-  const json = JSON.stringify(data)
-  localStorage.setItem('data', json)
-}
-
-function handleDOMReady() {
-  const dataFromStorage = localStorage.getItem('data')
-
-  if (dataFromStorage) {
-    data = JSON.parse(dataFromStorage)
-
-    render()
   }
 }
 
-function handleClickRemoveButton(event) {
-  const role = event.target.getAttribute('data-role')
-  const id = event.target.getAttribute('data-id')
+class ToDoFormCreate {
 
-  if (role == 'remove') {
-    data = data.filter((item) => {
-      return item.id != id
-    })
-
-    render()
+  constructor(formCreateElement) {
+    this.formCreateElement = formCreateElement
+    this.init()
   }
-}
 
-function handleClickEditButton(event) {
-  const { target } = event
-  const { role, id } = target.dataset
+  init() {
+    this.handleSubmit = this.#handleSubmit.bind(this)
+    this.formCreateElement.addEventListener('submit', this.handleSubmit)
+  }
 
-  if (role == 'edit') {
-    if (isEdit == true) {
-      alert('Уже редактируется')
-      return
+  #handleSubmit(event) {
+    event.preventDefault()
+
+    const toDo = {
+      id: new Date().getTime(),
+      isChecked: false,
     }
+
+    const formData = new FormData(formCreateElement)
+    for (let [name, value] of formData.entries()) {
+      toDo[name] = value
+    }
+
+    data.push(toDo)
+    this.formCreateElement.reset()
+
+    const eventRenderNeed = new Event('render:need')
+    window.dispatchEvent(eventRenderNeed)
+  }
+}
+
+class ToDoList {
+  isEdit = false
+  currentEditedToDo = {}
+
+  constructor(listElement) {
+    this.listElement = listElement
+
+    this.init()
+  }
+  init() {
+
+    this.handleChange = this.#handleChange.bind(this)
+    this.handleRenderNeed = this.#handleRenderNeed.bind(this)
+    this.handleClickRemoveButton = this.#handleClickRemoveButton.bind(this)
+    this.handleClickEditButton = this.#handleClickEditButton.bind(this)
+    this.handleFormEditSubmit = this.#handleFormEditSubmit.bind(this)
+    this.handleClickCancelEditButton = this.#handleClickCancelEditButton.bind(this)
+
+    window.addEventListener('render:need', this.handleRenderNeed)
+    this.listElement.addEventListener('change', this.handleChange)
+    this.listElement.addEventListener('click', this.handleClickRemoveButton)
+    this.listElement.addEventListener('click', this.handleClickEditButton)
+    this.listElement.addEventListener('submit', this.handleFormEditSubmit)
+    this.listElement.addEventListener('click', this.handleClickCancelEditButton)
+  }
+
+  #handleChange(event) {
+    const { target } = event
+    const { id, checked, type } = target
+
+    if (type !== 'checkbox') return
 
     data.forEach((item) => {
       if (item.id == id) {
-        currentEditedToDo = item
-        const { parentElement } = target
-        const formEditElement = formEditTemplate(item)
-        parentElement.outerHTML = formEditElement
-        isEdit = true
+        item.isChecked = checked
       }
     })
+
+    this.render()
+    this.isEdit = false
+
   }
-}
 
-function handleClickCancelEditButton(event) {
-  const { role } = event.target.dataset
+  #handleClickRemoveButton(event) {
+    const role = event.target.getAttribute('data-role')
+    const id = event.target.getAttribute('data-id')
 
-  if (role == 'cancelEdit') {
-    render()
-    isEdit = false
+    if (role == 'remove') {
+      data = data.filter((item) => item.id != id)
+
+      this.render()
+      this.isEdit = false
+    }
   }
-}
 
-function handleFormEditSubmit(event) {
-  event.preventDefault()
-  const { target } = event
-  const { role, id } = target.dataset
+  #handleClickEditButton(event) {
+    const { target } = event
+    const { role, id } = target.dataset
 
-  if (role == 'editForm') {
-    const content = target.querySelector('[name="content"]').value
-    console.log(content)
-    currentEditedToDo.content = content
-    console.log(currentEditedToDo)
+    if (role == 'edit') {
+      if (this.isEdit == true) {
+        alert('Уже редактируется')
+        return
+      }
 
-    render()
-    isEdit = false
+      data.forEach((item) => {
+        if (item.id == id) {
+          this.currentEditedToDo = item
+
+          const { parentElement } = target
+          const formEditElement = this.formEditTemplate(item)
+          parentElement.outerHTML = formEditElement
+          this.isEdit = true
+        }
+      })
+    }
   }
-}
 
-function createToDoTemplate({ id, content, isChecked }) {
-  const checkedAttr = isChecked ? 'checked' : ''
+  #handleClickCancelEditButton(event) {
+    const { role } = event.target.dataset
 
-  const template = `
+    if (role == 'cancelEdit') {
+      this.render()
+      this.isEdit = false
+    }
+  }
+
+  #handleFormEditSubmit(event) {
+    event.preventDefault()
+    const { target } = event
+    const { role, id } = target.dataset
+
+    if (role == 'editForm') {
+      const content = target.querySelector('[name="content"]').value
+
+      this.currentEditedToDo.content = content
+      this.render()
+      this.isEdit = false
+    }
+  }
+
+  #handleRenderNeed() {
+    this.render()
+    this.isEdit = false
+  }
+
+  createToDoTemplate({ id, content, isChecked }) {
+    const checkedAttr = isChecked ? 'checked' : ''
+
+    const template = `
     <div class="island__item d-flex ${checkedAttr}">
       <div class="form-check  form-check-lg">
         <input class="form-check-input"  ${checkedAttr} type="checkbox" id="${id}">
@@ -136,12 +191,11 @@ function createToDoTemplate({ id, content, isChecked }) {
       </button>
     </div>
   `
+    return template
+  }
 
-  return template
-}
-
-function formEditTemplate({ content }) {
-  const template = `
+  formEditTemplate({ content }) {
+    const template = `
     <div class="island__item" id="formEditContainer">
       <form class="d-flex" data-role="editForm">
         <div class="flex-grow-1">
@@ -158,30 +212,25 @@ function formEditTemplate({ content }) {
       </form>
     </div>
   `
+    return template
+  }
 
-  return template
+  createToDoElements() {
+    let result = ''
+
+    data.forEach((toDo) => {
+      result = result + this.createToDoTemplate(toDo)
+    })
+
+    return result
+  }
+
+  render() {
+    const toDoElements = this.createToDoElements()
+    this.listElement.innerHTML = toDoElements
+  }
 }
 
-function createToDoElements() {
-  let result = ''
-
-  data.forEach((toDo) => {
-    result = result + createToDoTemplate(toDo)
-  })
-
-  return result
-}
-
-function render() {
-  const toDoElements = createToDoElements()
-  listElement.innerHTML = toDoElements
-}
-
-formCreateElement.addEventListener('submit', handleSubmit)
-listElement.addEventListener('change', handleChange)
-listElement.addEventListener('click', handleClickRemoveButton)
-listElement.addEventListener('click', handleClickEditButton)
-listElement.addEventListener('click', handleClickCancelEditButton)
-listElement.addEventListener('submit', handleFormEditSubmit)
-window.addEventListener('beforeunload', handleBeforeUnload)
-window.addEventListener('DOMContentLoaded', handleDOMReady)
+new ToDoFormCreate(formCreateElement)
+new ToDoList(listElement)
+new ToDoSaved()
